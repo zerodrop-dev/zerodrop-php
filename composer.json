@@ -1,0 +1,31 @@
+{
+    "name": "zerodrop/zerodrop",
+    "description": "Disposable email inboxes for testing auth flows in CI — OTPs and magic links auto-extracted. PHPUnit, Pest, Laravel Dusk. No regex, no Docker, no signup.",
+    "type": "library",
+    "license": "MIT",
+    "keywords": ["email", "testing", "otp", "magic-link", "ci", "e2e", "phpunit", "pest", "laravel-dusk", "email-verification"],
+    "homepage": "https://zerodrop.dev",
+    "authors": [
+        {
+            "name": "ZeroDrop",
+            "email": "founder@zerodrop.dev",
+            "homepage": "https://zerodrop.dev"
+        }
+    ],
+    "support": {
+        "issues": "https://github.com/zerodrop-dev/zerodrop-php/issues",
+        "source": "https://github.com/zerodrop-dev/zerodrop-php",
+        "docs": "https://docs.zerodrop.dev"
+    },
+    "require": {
+        "php": ">=8.1",
+        "ext-curl": "*",
+        "ext-json": "*"
+    },
+    "autoload": {
+        "psr-4": {
+            "ZeroDrop\\": "src/"
+        }
+    },
+    "minimum-stability": "stable"
+}
