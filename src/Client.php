@@ -21,23 +21,78 @@ use ZeroDrop\Exception\TimeoutException;
  */
 final class Client
 {
+    public const VERSION = '0.2.0';
+
     private const DEFAULT_BASE_URL = 'https://zerodrop.dev';
     private const FREE_DOMAIN = 'zerodrop-sandbox.online';
     private const ADJECTIVES = ['swift', 'dark', 'cold', 'null', 'void', 'zero', 'dead', 'raw', 'base', 'core'];
     private const ALPHANUM = 'abcdefghijklmnopqrstuvwxyz0123456789';
 
+    // A free key from https://zerodrop.dev/keys: zd_<prefix>_<32 letters/digits>.
+    // Inboxes named <prefix>-... can be read only with that key.
+    private const KEY_FORMAT = '/^zd_([a-z0-9]{4})_[A-Za-z0-9]{32}$/';
+
+    // A key goes into an HTTP header, so after trimming it may hold only
+    // visible ASCII. Anything else is refused without echoing the key.
+    private const KEY_CHARS = '/^[\x21-\x7e]+\z/';
+
+    // Whitespace around a key, including the no-break spaces and byte-order
+    // marks that copying and pasting can bring along.
+    private const KEY_PADDING = '/^[\s\x00\x{00A0}\x{1680}\x{2000}-\x{200A}\x{2028}\x{2029}\x{202F}\x{205F}\x{3000}\x{FEFF}]+'
+        . '|[\s\x00\x{00A0}\x{1680}\x{2000}-\x{200A}\x{2028}\x{2029}\x{202F}\x{205F}\x{3000}\x{FEFF}]+\z/u';
+
+    private readonly ?string $apiKey;
+    private readonly ?string $prefix;
     private string $baseUrl;
 
+    /**
+     * @param string|null $apiKey  Free API key from https://zerodrop.dev/keys.
+     *                             Defaults to the ZERODROP_API_KEY environment
+     *                             variable. Without a key, anyone who knows an
+     *                             inbox's name can read it.
+     * @param string      $baseUrl Override for self-hosted instances.
+     *
+     * @throws \InvalidArgumentException if the key holds a character that can't
+     *                                   be sent in an HTTP header (a line break,
+     *                                   a byte-order mark...)
+     */
     public function __construct(
-        private readonly ?string $apiKey = null,
+        ?string $apiKey = null,
         string $baseUrl = self::DEFAULT_BASE_URL,
     ) {
+        $key = self::trimKey((string) $apiKey);
+        if ($key === '') {
+            $key = self::trimKey((string) (getenv('ZERODROP_API_KEY') ?: ($_ENV['ZERODROP_API_KEY'] ?? $_SERVER['ZERODROP_API_KEY'] ?? '')));
+        }
+        if ($key !== '' && preg_match(self::KEY_CHARS, $key) !== 1) {
+            throw new \InvalidArgumentException(
+                "ZeroDrop: the API key contains a character that can't be sent in an HTTP header, "
+                . 'such as a line break or a byte-order mark. Copy it again from https://zerodrop.dev/keys.'
+            );
+        }
+        $this->apiKey = $key === '' ? null : $key;
+        $this->prefix = $this->apiKey !== null && preg_match(self::KEY_FORMAT, $this->apiKey, $m) === 1 ? $m[1] : null;
         $this->baseUrl = rtrim($baseUrl, '/');
+    }
+
+    private static function trimKey(string $key): string
+    {
+        // Not valid UTF-8: plain trim(), and the character check refuses it.
+        return preg_replace(self::KEY_PADDING, '', $key) ?? trim($key);
+    }
+
+    /**
+     * Your key's inbox prefix ("k7x2"), or null without a key.
+     */
+    public function prefix(): ?string
+    {
+        return $this->prefix;
     }
 
     /**
      * Returns a ready-to-use email address instantly.
-     * No network request is made.
+     * No network request is made. With a key, the name starts with your
+     * prefix: k7x2-swift-x7k29ab@zerodrop-sandbox.online.
      */
     public function generateInbox(): string
     {
@@ -46,13 +101,17 @@ final class Client
         for ($i = 0; $i < 7; $i++) {
             $suffix .= self::ALPHANUM[random_int(0, strlen(self::ALPHANUM) - 1)];
         }
-        return sprintf('%s-%s@%s', $adjective, $suffix, self::FREE_DOMAIN);
+        $name = sprintf('%s-%s', $adjective, $suffix);
+        if ($this->prefix !== null) {
+            $name = $this->prefix . '-' . $name;
+        }
+        return sprintf('%s@%s', $name, self::FREE_DOMAIN);
     }
 
     /**
      * Returns the newest email matching the filter, or null.
      *
-     * @throws AuthException on invalid API key
+     * @throws AuthException when the inbox needs another key; the message says why
      * @throws NetworkException on transport failure
      */
     public function fetchLatest(string $inbox, ?Filter $filter = null): ?Email
@@ -63,7 +122,8 @@ final class Client
         [$status, $body] = $this->httpGet($url);
 
         if ($status === 401) {
-            throw new AuthException();
+            $reason = json_decode($body, true)['error'] ?? null;
+            throw new AuthException(is_string($reason) ? $reason : null);
         }
         if ($status !== 200) {
             throw new NetworkException("API returned {$status}");
@@ -93,7 +153,7 @@ final class Client
      * @param float $pollInterval seconds between polls (default 2)
      *
      * @throws TimeoutException if nothing arrives in time
-     * @throws AuthException on invalid API key
+     * @throws AuthException when the inbox needs another key; the message says why
      */
     public function waitForLatest(
         string $inbox,
@@ -127,7 +187,7 @@ final class Client
             throw new NetworkException('Failed to initialize cURL');
         }
 
-        $headers = ['User-Agent: zerodrop-php/0.1.0'];
+        $headers = ['User-Agent: zerodrop-php/' . self::VERSION];
         if ($this->apiKey !== null) {
             $headers[] = 'Authorization: Bearer ' . $this->apiKey;
         }

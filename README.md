@@ -141,6 +141,21 @@ $browser->visit($email->magicLink)
         ->assertPathIs('/dashboard');
 ```
 
+## Free API key (private inboxes)
+
+Without a key, anyone who knows an inbox's name can read it. With a free key, your inboxes start with your own prefix and only your key can read them.
+
+1. Sign in with GitHub at [zerodrop.dev/keys](https://zerodrop.dev/keys) and create a key.
+2. Set it as `ZERODROP_API_KEY`. The client reads it automatically, or you can pass `apiKey:`.
+
+```php
+$mail = new Client(); // reads ZERODROP_API_KEY when it's set
+$mail->generateInbox();
+// "k7x2-swift-x7k29ab@zerodrop-sandbox.online", where k7x2 is your prefix
+```
+
+Reading a `k7x2-…` inbox without your key throws `AuthException` with the reason. `$mail->prefix()` returns your prefix if you build an address yourself. A key holding a character that can't be sent in an HTTP header (a line break, a byte-order mark) makes `new Client()` throw `InvalidArgumentException`; the message never includes the key.
+
 ## Parallel test runs
 
 `generateInbox()` runs locally — no network request, no collisions. Safe with Paratest and parallel Dusk runs; every call returns a unique isolated inbox.
@@ -157,7 +172,7 @@ try {
 } catch (TimeoutException $e) {
     // No email arrived — check your app is sending correctly
 } catch (AuthException $e) {
-    // Invalid API key
+    // The inbox belongs to another key's prefix, or your key is wrong — $e->getMessage() says which
 } catch (NetworkException $e) {
     // Transport failure — message includes status page link
 }
@@ -165,8 +180,11 @@ try {
 
 ## Workspaces
 
+A Workspace key works the same way: set `ZERODROP_API_KEY`, or pass it yourself.
+
 ```php
-$mail = new Client(apiKey: getenv('ZERODROP_API_KEY'));
+$mail = new Client();                      // reads ZERODROP_API_KEY
+$mail = new Client(apiKey: $workspaceKey); // or pass the key
 ```
 
 ## Self-hosted
@@ -179,8 +197,9 @@ $mail = new Client(baseUrl: 'https://your-instance.yourdomain.com');
 
 | Method | Description |
 |---|---|
-| `new Client(?string $apiKey, string $baseUrl)` | Create a client. No args = free sandbox mode. |
-| `generateInbox(): string` | Instant inbox address. No network request. |
+| `new Client(?string $apiKey, string $baseUrl)` | Create a client. `$apiKey` defaults to the `ZERODROP_API_KEY` environment variable; without a key, inboxes are public to anyone who knows the name. |
+| `generateInbox(): string` | Instant inbox address. No network request. With a key, the name starts with your prefix. |
+| `prefix(): ?string` | Your key's inbox prefix (`"k7x2"`), or `null` without a key. |
 | `fetchLatest(string $inbox, ?Filter $filter): ?Email` | Latest matching email or null. |
 | `waitForLatest(string $inbox, float $timeout, float $pollInterval, ?Filter $filter): Email` | Block until email arrives. |
 
@@ -194,6 +213,7 @@ $mail = new Client(baseUrl: 'https://your-instance.yourdomain.com');
 | Email filtering | ✓ | ✓ |
 | Email retention | 30 min | Extended |
 | Custom domains | ✗ | ✓ |
+| API key | ✓ free at [zerodrop.dev/keys](https://zerodrop.dev/keys) | ✓ |
 
 Get a Workspace at [zerodrop.dev](https://zerodrop.dev)
 
