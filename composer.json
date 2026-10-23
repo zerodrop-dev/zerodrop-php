@@ -1,6 +1,6 @@
 {
     "name": "zerodrop/zerodrop",
-    "description": "Disposable email inboxes for testing auth flows in CI — OTPs and magic links auto-extracted. PHPUnit, Pest, Laravel Dusk. No regex, no Docker, no signup.",
+    "description": "Disposable email inboxes for testing auth flows in CI — OTPs and magic links auto-extracted. PHPUnit, Pest, Laravel Dusk. No regex, no Docker, no signup to try.",
     "type": "library",
     "license": "MIT",
     "keywords": ["email", "testing", "otp", "magic-link", "ci", "e2e", "phpunit", "pest", "laravel-dusk", "email-verification"],

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace ZeroDrop;
 
 use ZeroDrop\Exception\AuthException;
+use ZeroDrop\Exception\HeldException;
 use ZeroDrop\Exception\NetworkException;
 use ZeroDrop\Exception\TimeoutException;
 
@@ -21,7 +22,7 @@ use ZeroDrop\Exception\TimeoutException;
  */
 final class Client
 {
-    public const VERSION = '0.2.0';
+    public const VERSION = '0.3.0';
 
     private const DEFAULT_BASE_URL = 'https://zerodrop.dev';
     private const FREE_DOMAIN = 'zerodrop-sandbox.online';
@@ -112,6 +113,8 @@ final class Client
      * Returns the newest email matching the filter, or null.
      *
      * @throws AuthException when the inbox needs another key; the message says why
+     * @throws HeldException when nothing matches and ZeroDrop held mail to the inbox
+     *                       (daily limit without a key); the message says why
      * @throws NetworkException on transport failure
      */
     public function fetchLatest(string $inbox, ?Filter $filter = null): ?Email
@@ -135,11 +138,26 @@ final class Client
             throw new NetworkException('Invalid JSON response');
         }
 
+        // A held-mail notice ("held": true) stands in for an email ZeroDrop
+        // didn't store: without an API key, one sender can reach only a few
+        // different inboxes a day. A notice is never returned as an email;
+        // if nothing else matches, the first one's reason is thrown.
+        $notice = null;
         foreach ($payload['emails'] ?? [] as $raw) {
+            if (($raw['held'] ?? null) === true) {
+                $notice ??= $raw;
+                continue;
+            }
             $email = Email::fromArray($raw);
             if ($filter === null || $filter->matches($email)) {
                 return $email;
             }
+        }
+
+        if ($notice !== null) {
+            $reason = $notice['reason'] ?? null;
+            $reason = is_string($reason) ? trim($reason) : '';
+            throw new HeldException($reason !== '' ? $reason : null);
         }
 
         return null;
@@ -154,6 +172,8 @@ final class Client
      *
      * @throws TimeoutException if nothing arrives in time
      * @throws AuthException when the inbox needs another key; the message says why
+     * @throws HeldException at once, not after the timeout, when ZeroDrop held mail
+     *                       to the inbox (daily limit without a key); the message says why
      */
     public function waitForLatest(
         string $inbox,
