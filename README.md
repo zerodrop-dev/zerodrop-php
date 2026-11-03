@@ -158,6 +158,19 @@ Reading a `k7x2-…` inbox without your key throws `AuthException` with the reas
 
 Without a key, if ZeroDrop held an email because its sender passed the daily limit, the inbox gets a notice instead, and `fetchLatest()` and `waitForLatest()` throw `HeldException` saying so (0.3.0 or later; older versions return the notice as if it were the email, or time out when a filter skips it). A free key from [zerodrop.dev/keys](https://zerodrop.dev/keys) avoids the limit.
 
+## Workspace Domain
+
+A Workspace receives mail on a domain of its own, such as `yourcompany-qa.com`, so sign-up forms that block disposable domains accept it. Every inbox on it can be read only with your key. Set the domain as `ZERODROP_DOMAIN`, or pass it as `domain:`, next to your key:
+
+```php
+$mail = new Client(domain: 'yourcompany-qa.com'); // reads ZERODROP_API_KEY
+$inbox = $mail->generateInbox();
+// "k7x2-swift-x7k29ab@yourcompany-qa.com"
+$email = $mail->waitForLatest($inbox, timeout: 15);
+```
+
+Any address on the domain works, including one you name yourself: mail to `qa@yourcompany-qa.com` is filed under your prefix, and `$mail->waitForLatest('qa@yourcompany-qa.com')` reads it from there. `$mail->domain()` returns the domain in use. Workspaces are set up with the founder: [zerodrop.dev/pricing](https://zerodrop.dev/pricing).
+
 ## Parallel test runs
 
 `generateInbox()` runs locally — no network request, no collisions. Safe with Paratest and parallel Dusk runs; every call returns a unique isolated inbox. Mail to many inboxes a day needs a free API key: without one, one sender can reach only 5 different inboxes a day.
@@ -192,6 +205,8 @@ $mail = new Client();                      // reads ZERODROP_API_KEY
 $mail = new Client(apiKey: $workspaceKey); // or pass the key
 ```
 
+A Workspace's own domain goes in `ZERODROP_DOMAIN` or `domain:`; see [Workspace Domain](#workspace-domain).
+
 ## Self-hosted
 
 ```php
@@ -202,9 +217,10 @@ $mail = new Client(baseUrl: 'https://your-instance.yourdomain.com');
 
 | Method | Description |
 |---|---|
-| `new Client(?string $apiKey, string $baseUrl)` | Create a client. `$apiKey` defaults to the `ZERODROP_API_KEY` environment variable; without a key, inboxes are public to anyone who knows the name. |
+| `new Client(?string $apiKey, string $baseUrl, ?string $domain)` | Create a client. `$apiKey` defaults to the `ZERODROP_API_KEY` environment variable; without a key, inboxes are public to anyone who knows the name. `$domain`, your Workspace's own domain, defaults to the `ZERODROP_DOMAIN` environment variable, then the shared `zerodrop-sandbox.online`; a value that isn't a domain name throws `InvalidArgumentException`. |
 | `generateInbox(): string` | Instant inbox address. No network request. With a key, the name starts with your prefix. |
 | `prefix(): ?string` | Your key's inbox prefix (`"k7x2"`), or `null` without a key. |
+| `domain(): string` | The domain generated addresses use: your Workspace's, or `zerodrop-sandbox.online`. |
 | `fetchLatest(string $inbox, ?Filter $filter): ?Email` | Latest matching email or null. |
 | `waitForLatest(string $inbox, float $timeout, float $pollInterval, ?Filter $filter): Email` | Block until email arrives. |
 
@@ -216,8 +232,8 @@ $mail = new Client(baseUrl: 'https://your-instance.yourdomain.com');
 | OTP auto-extraction | ✓ | ✓ |
 | Magic link extraction | ✓ | ✓ |
 | Email filtering | ✓ | ✓ |
-| Email retention | 30 min | Extended |
-| Custom domains | ✗ | ✓ |
+| Email retention | 30 min | Up to 7 days, set for your team |
+| Custom domains | ✗ | ✓ (see [Workspace Domain](#workspace-domain)) |
 | API key | ✓ free at [zerodrop.dev/keys](https://zerodrop.dev/keys) | ✓ |
 | Daily limit per sender | 5 inboxes without a key, none with one | None |
 

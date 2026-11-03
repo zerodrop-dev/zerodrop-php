@@ -22,7 +22,7 @@ use ZeroDrop\Exception\TimeoutException;
  */
 final class Client
 {
-    public const VERSION = '0.3.0';
+    public const VERSION = '0.4.0';
 
     private const DEFAULT_BASE_URL = 'https://zerodrop.dev';
     private const FREE_DOMAIN = 'zerodrop-sandbox.online';
@@ -42,8 +42,12 @@ final class Client
     private const KEY_PADDING = '/^[\s\x00\x{00A0}\x{1680}\x{2000}-\x{200A}\x{2028}\x{2029}\x{202F}\x{205F}\x{3000}\x{FEFF}]+'
         . '|[\s\x00\x{00A0}\x{1680}\x{2000}-\x{200A}\x{2028}\x{2029}\x{202F}\x{205F}\x{3000}\x{FEFF}]+\z/u';
 
+    // A Workspace's own domain, from the $domain argument or ZERODROP_DOMAIN.
+    private const HOST_NAME = '/^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+(?:[a-z]{2,63}|xn--[a-z0-9-]{1,59})$/D';
+
     private readonly ?string $apiKey;
     private readonly ?string $prefix;
+    private readonly string $domain;
     private string $baseUrl;
 
     /**
@@ -52,14 +56,21 @@ final class Client
      *                             variable. Without a key, anyone who knows an
      *                             inbox's name can read it.
      * @param string      $baseUrl Override for self-hosted instances.
+     * @param string|null $domain  Your Workspace's own domain, such as
+     *                             yourcompany-qa.com. Generated addresses use
+     *                             it, and its inboxes are read with your key.
+     *                             Defaults to the ZERODROP_DOMAIN environment
+     *                             variable, then the shared zerodrop-sandbox.online.
      *
      * @throws \InvalidArgumentException if the key holds a character that can't
      *                                   be sent in an HTTP header (a line break,
-     *                                   a byte-order mark...)
+     *                                   a byte-order mark...), or the domain
+     *                                   isn't a domain name
      */
     public function __construct(
         ?string $apiKey = null,
         string $baseUrl = self::DEFAULT_BASE_URL,
+        ?string $domain = null,
     ) {
         $key = self::trimKey((string) $apiKey);
         if ($key === '') {
@@ -74,6 +85,17 @@ final class Client
         $this->apiKey = $key === '' ? null : $key;
         $this->prefix = $this->apiKey !== null && preg_match(self::KEY_FORMAT, $this->apiKey, $m) === 1 ? $m[1] : null;
         $this->baseUrl = rtrim($baseUrl, '/');
+        $this->domain = self::resolveDomain($domain);
+
+        // Every inbox on a Workspace's domain needs its key. Said with
+        // error_log() (stderr from the CLI): a trigger_error() warning becomes
+        // an exception under error handlers such as Laravel's or PHPUnit 9's.
+        if ($this->domain !== self::FREE_DOMAIN && $this->prefix === null) {
+            error_log(
+                "[ZeroDrop] Inboxes on {$this->domain} belong to your Workspace and can be read only with its API key "
+                . '(zd_xxxx_… from https://zerodrop.dev/keys). Set ZERODROP_API_KEY.'
+            );
+        }
     }
 
     private static function trimKey(string $key): string
@@ -82,12 +104,41 @@ final class Client
         return preg_replace(self::KEY_PADDING, '', $key) ?? trim($key);
     }
 
+    // The receiving domain: the argument, else ZERODROP_DOMAIN, else the shared
+    // one. Trimmed like a key, then lowercased without one trailing dot.
+    private static function resolveDomain(?string $option): string
+    {
+        $value = self::trimKey((string) $option);
+        if ($value === '') {
+            $value = self::trimKey((string) (getenv('ZERODROP_DOMAIN') ?: ($_ENV['ZERODROP_DOMAIN'] ?? $_SERVER['ZERODROP_DOMAIN'] ?? '')));
+        }
+        if ($value === '') {
+            return self::FREE_DOMAIN;
+        }
+        $domain = strtolower($value);
+        $domain = str_ends_with($domain, '.') ? substr($domain, 0, -1) : $domain;
+        if (preg_match(self::HOST_NAME, $domain) !== 1) {
+            throw new \InvalidArgumentException(
+                "ZeroDrop: the domain argument (or ZERODROP_DOMAIN) isn't a domain name. Use your Workspace's domain, such as yourcompany-qa.com."
+            );
+        }
+        return $domain;
+    }
+
     /**
      * Your key's inbox prefix ("k7x2"), or null without a key.
      */
     public function prefix(): ?string
     {
         return $this->prefix;
+    }
+
+    /**
+     * The domain generated addresses use: your Workspace's, or zerodrop-sandbox.online.
+     */
+    public function domain(): string
+    {
+        return $this->domain;
     }
 
     /**
@@ -106,7 +157,7 @@ final class Client
         if ($this->prefix !== null) {
             $name = $this->prefix . '-' . $name;
         }
-        return sprintf('%s@%s', $name, self::FREE_DOMAIN);
+        return sprintf('%s@%s', $name, $this->domain);
     }
 
     /**
@@ -234,9 +285,21 @@ final class Client
         return [$status, (string) $body];
     }
 
+    // The inbox an address is read from: its local part. On your Workspace's
+    // own domain, mail is filed under your key's prefix, so an address you
+    // named yourself, such as qa@yourcompany-qa.com, is read as k7x2-qa.
     private function inboxName(string $inbox): string
     {
         $name = str_contains($inbox, '@') ? explode('@', $inbox, 2)[0] : $inbox;
-        return strtolower($name);
+        $name = strtolower($name);
+        if ($this->prefix === null || $this->domain === self::FREE_DOMAIN || !str_contains($inbox, '@')) {
+            return $name;
+        }
+        $domain = strtolower(substr($inbox, strrpos($inbox, '@') + 1));
+        $domain = str_ends_with($domain, '.') ? substr($domain, 0, -1) : $domain;
+        if ($domain !== $this->domain || str_starts_with($name, $this->prefix . '-')) {
+            return $name;
+        }
+        return $this->prefix . '-' . $name;
     }
 }
