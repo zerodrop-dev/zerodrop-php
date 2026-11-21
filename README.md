@@ -143,7 +143,7 @@ $browser->visit($email->magicLink)
 
 ## Free API key (private inboxes)
 
-Without a key, anyone who knows an inbox's name can read it, and one sender can reach only 5 different inboxes a day. With a free key, your inboxes start with your own prefix, only your key can read them, and mail to them isn't limited.
+Without a key, anyone who knows an inbox's name can read it, and one sender can reach only 5 different inboxes a day. With a free key, your inboxes start with your own prefix, only your key can read them, and the 5-inbox limit doesn't apply to them (your account can receive up to 300 emails a day).
 
 1. Sign in with GitHub at [zerodrop.dev/keys](https://zerodrop.dev/keys) and create a key.
 2. Set it as `ZERODROP_API_KEY`. The client reads it automatically, or you can pass `apiKey:`.
